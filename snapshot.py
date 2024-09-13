@@ -27,21 +27,25 @@ def get_old_snapshots():
     
     return old_snapshots
 
-def main():
+def lambda_handler(event, context):
     old_snapshots = get_old_snapshots()
     
     if not old_snapshots:
-        print("No snapshots older than one year.")
-        return
+        return {
+            'statusCode': 200,
+            'body': 'No snapshots older than one year.'
+        }
+    
+    result = []
     
     if snapshotdelete:
         # Print details of old snapshots
-        print(f"Found {len(old_snapshots)} snapshots older than one year:")
+        result.append(f"Found {len(old_snapshots)} snapshots older than one year:")
         for snapshot in old_snapshots:
-            print(f"Snapshot ID: {snapshot['SnapshotId']}")
-            print(f"Creation Time: {snapshot['StartTime']}")
-            print(f"Size (GiB): {snapshot['VolumeSize']}")
-            print('-' * 40)
+            result.append(f"Snapshot ID: {snapshot['SnapshotId']}")
+            result.append(f"Creation Time: {snapshot['StartTime']}")
+            result.append(f"Size (GiB): {snapshot['VolumeSize']}")
+            result.append('-' * 40)
         
         # Delete snapshots
         deleted_snapshots = []
@@ -49,18 +53,19 @@ def main():
             ec2_client.delete_snapshot(SnapshotId=snapshot['SnapshotId'])
             deleted_snapshots.append(snapshot['SnapshotId'])
         
-        print("Deleted Snapshots:")
-        for snapshot_id in deleted_snapshots:
-            print(snapshot_id)
+        result.append("Deleted Snapshots:")
+        result.extend(deleted_snapshots)
     
     else:
-        print("Snapshot deletion is not enabled.")
-        print("Available snapshots ready to delete (older than one year):")
+        result.append("Snapshot deletion is not enabled.")
+        result.append("Available snapshots ready to delete (older than one year):")
         for snapshot in old_snapshots:
-            print(f"Snapshot ID: {snapshot['SnapshotId']}")
-            print(f"Creation Time: {snapshot['StartTime']}")
-            print(f"Size (GiB): {snapshot['VolumeSize']}")
-            print('-' * 40)
+            result.append(f"Snapshot ID: {snapshot['SnapshotId']}")
+            result.append(f"Creation Time: {snapshot['StartTime']}")
+            result.append(f"Size (GiB): {snapshot['VolumeSize']}")
+            result.append('-' * 40)
 
-if __name__ == "__main__":
-    main()
+    return {
+        'statusCode': 200,
+        'body': '\n'.join(result)
+    }
