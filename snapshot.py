@@ -1,71 +1,82 @@
 import boto3
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+import json
 
-# Initialize the Boto3 client for EC2
-ec2_client = boto3.client('ec2')
+def lambda_handler(event, context):
+    # Initialize the Boto3 client for EC2
+    ec2_client = boto3.client('ec2')
 
-# Get the environment variable for snapshot deletion
-snapshotdelete = os.getenv('snapshotdelete', 'false').lower() == 'true'
-
-def get_old_snapshots():
-    # Get the current time
-    now = datetime.now(timezone.utc)
+    # Get the environment variable for snapshot deletion
+    snapshotdelete = os.getenv('snapshotdelete', 'false').lower() == 'true'
+    
+    # Calculate the time threshold for one year ago
+    one_year_ago = datetime.now(timezone.utc) - timedelta(days=365)
     
     # Get the snapshots
     snapshots = ec2_client.describe_snapshots(OwnerIds=['self'])['Snapshots']
     
     old_snapshots = []
-    
-    for snapshot in snapshots:
-        # Parse the snapshot creation time
-        create_time = snapshot['StartTime']
-        
-        # Check if the snapshot is older than one year
-        if (now - create_time).days > 365:
-            old_snapshots.append(snapshot)
-    
-    return old_snapshots
 
-def lambda_handler(event, context):
-    old_snapshots = get_old_snapshots()
-    
-    if not old_snapshots:
-        return {
-            'statusCode': 200,
-            'body': 'No snapshots older than one year.'
-        }
-    
-    result = []
+    # Loop through snapshots and find those older than one year
+    for snapshot in snapshots:
+        # Get the snapshot's creation date
+        creation_date = snapshot['StartTime']
+
+        # Check if the snapshot is older than one year
+        if creation_date < one_year_ago:
+            # Get the snapshot's tags to find the name
+            tags = ec2_client.describe_tags(Filters=[
+                {'Name': 'resource-id', 'Values': [snapshot['SnapshotId']]}
+            ])['Tags']
+            
+            name = 'Unnamed'
+            for tag in tags:
+                if tag['Key'] == 'Name':
+                    name = tag['Value']
+                    break
+            
+            old_snapshots.append({
+                'SnapshotId': snapshot['SnapshotId'],
+                'Name': name,
+                'Size': snapshot['VolumeSize']
+            })
+
+    count_of_old_snapshots = len(old_snapshots)
     
     if snapshotdelete:
-        # Print details of old snapshots
-        result.append(f"Found {len(old_snapshots)} snapshots older than one year:")
-        for snapshot in old_snapshots:
-            result.append(f"Snapshot ID: {snapshot['SnapshotId']}")
-            result.append(f"Creation Time: {snapshot['StartTime']}")
-            result.append(f"Size (GiB): {snapshot['VolumeSize']}")
-            result.append('-' * 40)
-        
+        # Print the details of old snapshots
+        if count_of_old_snapshots > 0:
+            for snap in old_snapshots:
+                print(f"SnapshotId: {snap['SnapshotId']}, Name: {snap['Name']}, Size: {snap['Size']} GiB")
+            print(f"Total snapshots deleted: {count_of_old_snapshots}")
+
         # Delete snapshots
         deleted_snapshots = []
         for snapshot in old_snapshots:
             ec2_client.delete_snapshot(SnapshotId=snapshot['SnapshotId'])
             deleted_snapshots.append(snapshot['SnapshotId'])
-        
-        result.append("Deleted Snapshots:")
-        result.extend(deleted_snapshots)
+
+        result = {
+            'count_of_deleted_snapshots': len(deleted_snapshots),
+            'deleted_snapshots': deleted_snapshots
+        }
     
     else:
-        result.append("Snapshot deletion is not enabled.")
-        result.append("Available snapshots ready to delete (older than one year):")
-        for snapshot in old_snapshots:
-            result.append(f"Snapshot ID: {snapshot['SnapshotId']}")
-            result.append(f"Creation Time: {snapshot['StartTime']}")
-            result.append(f"Size (GiB): {snapshot['VolumeSize']}")
-            result.append('-' * 40)
+        # Print the details of old snapshots ready to delete
+        if count_of_old_snapshots > 0:
+            for snap in old_snapshots:
+                print(f"SnapshotId: {snap['SnapshotId']}, Name: {snap['Name']}, Size: {snap['Size']} GiB")
+        else:
+            print("No snapshots older than one year found.")
+        
+        result = {
+            'count_of_old_snapshots': count_of_old_snapshots,
+            'old_snapshots': old_snapshots
+        }
 
+    # Return results as JSON
     return {
         'statusCode': 200,
-        'body': '\n'.join(result)
+        'body': json.dumps(result, indent=4)
     }
