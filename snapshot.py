@@ -25,20 +25,9 @@ def lambda_handler(event, context):
 
         # Check if the snapshot is older than one year
         if creation_date < one_year_ago:
-            # Get the snapshot's tags to find the name
-            tags = ec2_client.describe_tags(Filters=[
-                {'Name': 'resource-id', 'Values': [snapshot['SnapshotId']]}
-            ])['Tags']
-            
-            name = 'Unnamed'
-            for tag in tags:
-                if tag['Key'] == 'Name':
-                    name = tag['Value']
-                    break
-            
             old_snapshots.append({
                 'SnapshotId': snapshot['SnapshotId'],
-                'Name': name,
+                'Name': 'Unnamed',  # Name is not available, so default to 'Unnamed'
                 'Size': snapshot['VolumeSize']
             })
 
