@@ -1,4 +1,90 @@
 # lambdas
+```
+import boto3
+from datetime import datetime, timezone, timedelta
+import os
+
+def lambda_handler(event, context):
+    # Initialize EC2 client
+    ec2_client = boto3.client('ec2')
+
+    # Get all available volumes
+    volumes = ec2_client.describe_volumes(Filters=[{'Name': 'status', 'Values': ['available']}])
+
+    # Calculate the time threshold for 1 week ago
+    one_week_ago = datetime.now(timezone.utc) - timedelta(weeks=1)
+
+    unused_volumes = []
+
+    # Loop through volumes and find those unused for more than one week
+    for volume in volumes['Volumes']:
+        # Get the volume's creation date
+        creation_date = volume['CreateTime']
+
+        # Check if the volume has been unused for more than 1 week
+        if not volume['Attachments'] and creation_date < one_week_ago:
+            # Get the volume's ID, size, and name (if it has a tag named 'Name')
+            volume_id = volume['VolumeId']
+            size = volume['Size']
+            name = 'Unnamed'
+            
+            # Get volume name from tags
+            if 'Tags' in volume:
+                for tag in volume['Tags']:
+                    if tag['Key'] == 'Name':
+                        name = tag['Value']
+                        break
+            
+            # Add the volume details to the unused_volumes list
+            unused_volumes.append({
+                'VolumeId': volume_id,
+                'Name': name,
+                'CreationDate': creation_date.strftime('%Y-%m-%d %H:%M:%S'),
+                'Size': size
+            })
+
+    # Check the environment variable to decide on deletion
+    volume_delete = os.getenv('VOLUME_DELETE', 'false').lower() == 'true'
+
+    if volume_delete:
+        count_of_deleted_volumes = 0
+        if unused_volumes:
+            for vol in unused_volumes:
+                try:
+                    ec2_client.delete_volume(VolumeId=vol['VolumeId'])
+                    count_of_deleted_volumes += 1
+                    print(f"Deleted VolumeId: {vol['VolumeId']}")
+                except Exception as e:
+                    print(f"Error deleting VolumeId: {vol['VolumeId']}. Error: {str(e)}")
+
+        # Print the details of unused volumes and deletion count
+        count_of_unused_volumes = len(unused_volumes)
+        if count_of_unused_volumes > 0:
+            for vol in unused_volumes:
+                print(f"VolumeId: {vol['VolumeId']}, Name: {vol['Name']}, CreationDate: {vol['CreationDate']}, Size: {vol['Size']} GiB")
+            print(f"Total unused volumes older than one week: {count_of_unused_volumes}")
+            print(f"Total deleted volumes: {count_of_deleted_volumes}")
+        else:
+            print("No unused volumes older than one week found.")
+    else:
+        # Just print the details of unused volumes
+        if unused_volumes:
+            print("Unused volumes older than one week:")
+            for vol in unused_volumes:
+                print(f"VolumeId: {vol['VolumeId']}, Name: {vol['Name']}, CreationDate: {vol['CreationDate']}, Size: {vol['Size']} GiB")
+        else:
+            print("No unused volumes older than one week found.")
+
+    return {
+        'statusCode': 200,
+        'body': {
+            'unused_volumes': unused_volumes,
+            'count_of_unused_volumes': len(unused_volumes),
+            'volume_delete': volume_delete
+        }
+    }
+
+```
 
 ```
 import boto3
