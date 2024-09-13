@@ -1,7 +1,6 @@
 import boto3
 import os
 from datetime import datetime, timezone, timedelta
-import json
 
 def lambda_handler(event, context):
     # Initialize the Boto3 client for EC2
@@ -56,6 +55,7 @@ def lambda_handler(event, context):
         if count_of_old_snapshots > 0:
             for snap in old_snapshots:
                 print(f"SnapshotId: {snap['SnapshotId']}, Name: {snap['Name']}, Size: {snap['Size']} GiB")
+            print(f"Total snapshots ready to delete: {count_of_old_snapshots}")
         else:
             print("No snapshots older than one year found.")
         
@@ -64,8 +64,8 @@ def lambda_handler(event, context):
             'old_snapshots': old_snapshots
         }
 
-    # Return results as JSON
+    # Return results
     return {
         'statusCode': 200,
-        'body': json.dumps(result, indent=4)
+        'body': result  # Directly returning the result dictionary
     }
