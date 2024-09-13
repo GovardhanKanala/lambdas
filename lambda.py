@@ -1,15 +1,13 @@
 import boto3
 import datetime
+import pytz
 
 def lambda_handler(event, context):
     ec2 = boto3.client('ec2')
     
     # Get current time and calculate one week ago
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.utcnow().replace(tzinfo=pytz.utc)
     one_week_ago = now - datetime.timedelta(weeks=1)
-    
-    # Convert datetime to string in the format used by AWS
-    one_week_ago_str = one_week_ago.strftime('%Y-%m-%dT%H:%M:%S.000Z')
     
     # Describe volumes
     response = ec2.describe_volumes(
