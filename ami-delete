@@ -1,90 +1,72 @@
-import os
 import boto3
-from datetime import datetime, timedelta
-
-def get_amis_older_than_one_year(region):
-    # Initialize boto3 client for EC2 with the specified region
-    ec2_client = boto3.client('ec2', region_name=region)
-
-    # Calculate the date one year ago
-    one_year_ago = datetime.now() - timedelta(days=365)
-
-    try:
-        # Get all AMIs owned by the current account (Owner 'self')
-        response = ec2_client.describe_images(Owners=['self'])
-        print(f"AMI response: {response}")  # Debugging: Print full response
-    except Exception as e:
-        print(f"Error fetching AMIs: {e}")
-        return []
-
-    # Check if the 'Images' key exists and process the response
-    if 'Images' not in response:
-        print("No AMIs found in the response.")
-        return []
-
-    # List to store AMI IDs that are older than one year
-    old_amis = []
-
-    for image in response['Images']:
-        creation_date = image['CreationDate']
-        print(f"Checking AMI {image['ImageId']} created on {creation_date}")  # Debugging: Log AMI creation date
-        creation_date_dt = datetime.strptime(creation_date, '%Y-%m-%dT%H:%M:%S.%fZ')
-        
-        # Check if the AMI is older than one year
-        if creation_date_dt < one_year_ago:
-            old_amis.append({
-                'ImageId': image['ImageId'],
-                'CreationDate': creation_date
-            })
-    
-    return old_amis
-
-def delete_ami(ami_id, region):
-    # Initialize boto3 client for EC2 with the specified region
-    ec2_client = boto3.client('ec2', region_name=region)
-    
-    try:
-        # Deregister the AMI
-        ec2_client.deregister_image(ImageId=ami_id)
-        print(f"Successfully deregistered AMI: {ami_id}")
-    except Exception as e:
-        print(f"Error deregistering AMI {ami_id}: {e}")
+import os
+from datetime import datetime, timezone, timedelta
 
 def lambda_handler(event, context):
-    # Check if the environment variable AMI_DELETE is set to 'true'
+    # Initialize the Boto3 client for EC2
+    ec2_client = boto3.client('ec2')
+
+    # Get the environment variable for AMI deletion
     ami_delete = os.getenv('AMI_DELETE', 'false').lower() == 'true'
+    
+    # Calculate the time threshold for one year ago
+    one_year_ago = datetime.now(timezone.utc) - timedelta(days=365)
+    
+    # Get the list of AMIs owned by the current account
+    images = ec2_client.describe_images(Owners=['self'])['Images']
+    
+    old_amis = []
 
-    # Get the AWS region from the environment variable or use default 'us-east-1'
-    region = os.getenv('AWS_REGION', 'us-east-1')
-    print(f"Running in region: {region}")  # Debugging: Log the region
+    # Loop through AMIs and find those older than one year
+    for image in images:
+        # Get the AMI's creation date
+        creation_date = datetime.strptime(image['CreationDate'], '%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=timezone.utc)
 
-    # Get the list of AMIs older than one year in the specified region
-    old_amis = get_amis_older_than_one_year(region)
+        # Check if the AMI is older than one year
+        if creation_date < one_year_ago:
+            old_amis.append({
+                'ImageId': image['ImageId'],
+                'Name': image.get('Name', 'Unnamed'),  # Get name or default to 'Unnamed'
+                'CreationDate': creation_date
+            })
 
-    if not old_amis:
-        print("No AMIs older than one year found.")
-        return {
-            'statusCode': 200,
-            'body': 'No AMIs older than one year found.'
+    count_of_old_amis = len(old_amis)
+    
+    if ami_delete:
+        # Print the details of old AMIs
+        if count_of_old_amis > 0:
+            for ami in old_amis:
+                print(f"ImageId: {ami['ImageId']}, Name: {ami['Name']}, CreationDate: {ami['CreationDate']}")
+            print(f"Total AMIs deleted: {count_of_old_amis}")
+
+        # Delete AMIs
+        deleted_amis = []
+        for ami in old_amis:
+            # Deregister the AMI
+            ec2_client.deregister_image(ImageId=ami['ImageId'])
+            deleted_amis.append(ami['ImageId'])
+
+        result = {
+            'count_of_deleted_amis': len(deleted_amis),
+            'deleted_amis': deleted_amis
         }
     
-    print(f"Found {len(old_amis)} AMIs older than one year in region {region}.")
-
-    # If AMI_DELETE is true, proceed to delete the AMIs
-    if ami_delete:
-        for ami in old_amis:
-            ami_id = ami['ImageId']
-            print(f"Deleting AMI: {ami_id} created on {ami['CreationDate']}")
-            delete_ami(ami_id, region)
-        return {
-            'statusCode': 200,
-            'body': f"Deleted {len(old_amis)} AMIs older than one year."
-        }
     else:
-        # If AMI_DELETE is false, just print the AMIs
-        for ami in old_amis:
-            print(f"AMI: {ami['ImageId']}, Creation Date: {ami['CreationDate']}")
-        return {
-            'statusCode': 200,
-            'body': f"Found {len(old_amis)} AMIs older than one year, but AMI_DELETE is set to false. No AMIs were deleted."
+        # Print the details of old AMIs ready to delete
+        if count_of_old_amis > 0:
+            for ami in old_amis:
+                print(f"ImageId: {ami['ImageId']}, Name: {ami['Name']}, CreationDate: {ami['CreationDate']}")
+            print(f"Total AMIs ready to delete: {count_of_old_amis}")
+        else:
+            print("No AMIs older than one year found.")
+        
+        result = {
+            'count_of_old_amis': count_of_old_amis,
+            'old_amis': old_amis
         }
+
+    # Return results
+    return {
+        'statusCode': 200,
+        'body': result  # Directly returning the result dictionary
+    }
