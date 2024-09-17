@@ -63,7 +63,10 @@ def lambda_handler(event, context):
 
     if not old_amis:
         print("No AMIs older than one year found.")
-        return
+        return {
+            'statusCode': 200,
+            'body': 'No AMIs older than one year found.'
+        }
     
     print(f"Found {len(old_amis)} AMIs older than one year in region {region}.")
 
@@ -73,7 +76,15 @@ def lambda_handler(event, context):
             ami_id = ami['ImageId']
             print(f"Deleting AMI: {ami_id} created on {ami['CreationDate']}")
             delete_ami(ami_id, region)
+        return {
+            'statusCode': 200,
+            'body': f"Deleted {len(old_amis)} AMIs older than one year."
+        }
     else:
         # If AMI_DELETE is false, just print the AMIs
         for ami in old_amis:
             print(f"AMI: {ami['ImageId']}, Creation Date: {ami['CreationDate']}")
+        return {
+            'statusCode': 200,
+            'body': f"Found {len(old_amis)} AMIs older than one year, but AMI_DELETE is set to false. No AMIs were deleted."
+        }
