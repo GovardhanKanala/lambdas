@@ -7,7 +7,7 @@ def lambda_handler(event, context):
     ec2_client = boto3.client('ec2')
 
     # Get the environment variable for AMI deletion
-    ami_delete = os.getenv('AMI_DELETE', 'false').lower() == 'true'
+    ami_delete = os.getenv('AMIDELETE', 'false').lower() == 'true'
     
     # Calculate the time threshold for one year ago
     one_year_ago = datetime.now(timezone.utc) - timedelta(days=365)
@@ -27,7 +27,7 @@ def lambda_handler(event, context):
             old_amis.append({
                 'ImageId': image['ImageId'],
                 'Name': image.get('Name', 'Unnamed'),  # Get name or default to 'Unnamed'
-                'CreationDate': creation_date
+                'CreationDate': creation_date.isoformat()  # Convert datetime to string
             })
 
     count_of_old_amis = len(old_amis)
