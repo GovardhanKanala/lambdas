@@ -9,14 +9,25 @@ def get_amis_older_than_one_year(region):
     # Calculate the date one year ago
     one_year_ago = datetime.now() - timedelta(days=365)
 
-    # Get all AMIs owned by the current account (Owner 'self')
-    response = ec2_client.describe_images(Owners=['self'])
+    try:
+        # Get all AMIs owned by the current account (Owner 'self')
+        response = ec2_client.describe_images(Owners=['self'])
+        print(f"AMI response: {response}")  # Debugging: Print full response
+    except Exception as e:
+        print(f"Error fetching AMIs: {e}")
+        return []
+
+    # Check if the 'Images' key exists and process the response
+    if 'Images' not in response:
+        print("No AMIs found in the response.")
+        return []
 
     # List to store AMI IDs that are older than one year
     old_amis = []
 
     for image in response['Images']:
         creation_date = image['CreationDate']
+        print(f"Checking AMI {image['ImageId']} created on {creation_date}")  # Debugging: Log AMI creation date
         creation_date_dt = datetime.strptime(creation_date, '%Y-%m-%dT%H:%M:%S.%fZ')
         
         # Check if the AMI is older than one year
@@ -45,6 +56,7 @@ def lambda_handler(event, context):
 
     # Get the AWS region from the environment variable or use default 'us-east-1'
     region = os.getenv('AWS_REGION', 'us-east-1')
+    print(f"Running in region: {region}")  # Debugging: Log the region
 
     # Get the list of AMIs older than one year in the specified region
     old_amis = get_amis_older_than_one_year(region)
